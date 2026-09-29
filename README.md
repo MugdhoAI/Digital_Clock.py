@@ -1,6 +1,6 @@
 # Extraordinary Digital Clock
 
-A desktop clock application built with Python and Tkinter — going well beyond a
+A desktop clock application built with Python and Tkinter. It goes well beyond a
 basic `datetime` + `Label` tutorial project into a small multi-feature desktop
 app with real UI/UX and software design decisions behind it.
 
@@ -10,7 +10,7 @@ app with real UI/UX and software design decisions behind it.
 
 - **Custom window chrome** — borderless, draggable window with its own
   minimize/close controls instead of relying on the OS title bar.
-- **Time-of-day reactive background** — the gradient shifts color palette
+- **Time of day reactive background** — the gradient shifts color palette
   depending on the current hour (day tones vs. night tones), recalculated
   every 30 seconds.
 - **Digital + analog display** — a live analog clock face is drawn on a
@@ -29,7 +29,7 @@ app with real UI/UX and software design decisions behind it.
 
 ## Why this project (design notes)
 
-This was deliberately built with a class-based architecture
+This was deliberately built with a class based architecture
 (`DigitalClockApp`) rather than flat procedural script logic, to demonstrate:
 
 - Encapsulation of state (theme, alarms, stopwatch) inside a single object
@@ -50,7 +50,7 @@ This was deliberately built with a class-based architecture
 - `winsound` is used for the alarm beep on Windows automatically; on macOS/
   Linux the app falls back to a terminal bell instead of crashing.
 
-No third-party packages are required — everything here uses the Python
+No third party packages are required — everything here uses the Python
 standard library. World clock times use fixed UTC offsets rather than a
 timezone database, so no `tzdata` install is needed. The trade-off: offsets
 are hardcoded to each city's current standard, so they will be off by an
@@ -65,7 +65,7 @@ python Digital_Clock.py
 
 The window remembers its last position and theme between runs via
 `settings.json`, which is created automatically next to the script on first
-launch. This file is user-specific runtime state, not source code — it's
+launch. This file is user specific runtime state, not source code — it's
 listed in `.gitignore` so it won't be committed to the repository.
 
 ## Controls
@@ -80,10 +80,10 @@ listed in `.gitignore` so it won't be committed to the repository.
 - Automatic daylight saving time adjustment for world clock offsets
 - Weather integration via a free API alongside the time
 - Offline text-to-speech time announcements
-- A Pomodoro/focus-session mode built on top of the stopwatch logic
+- A Pomodoro or focus session mode built on top of the stopwatch logic
 - Custom user-added timezones via the UI (currently edited via the
   `WORLD_CLOCK_OFFSETS` dictionary in the source file)
 
 ## License
 
-MIT — feel free to fork and build on this.
+MIT. Feel free to fork and build on this.
