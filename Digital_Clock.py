@@ -317,6 +317,7 @@ if tk is not None:
             self._build_tab_bar()
             self._build_clock_tab()
             self._build_stopwatch_tab()
+            self._build_alarms_tab()
             self.show_mode(self.mode)
 
             self.apply_theme()
@@ -378,7 +379,8 @@ if tk is not None:
             self.mode = mode
             self.settings["mode"] = mode
             for name, frame in (("Clock", self.clock_frame),
-                                ("Stopwatch", self.stopwatch_frame)):
+                                ("Stopwatch", self.stopwatch_frame),
+                                ("Alarms", self.alarms_frame)):
                 if name == mode:
                     frame.pack(fill="both", expand=True)
                 else:
@@ -477,6 +479,74 @@ if tk is not None:
             self.sw_start_button.configure(text="Start")
             self.sw_laps.delete(0, "end")
 
+        # -- alarms tab ----------------------------------------------------
+
+        def _build_alarms_tab(self):
+            self.alarms_frame = tk.Frame(self.root)
+            form = tk.Frame(self.alarms_frame)
+            form.pack(fill="x", padx=20, pady=(24, 8))
+            self.alarm_time_entry = tk.Entry(form, font=("Segoe UI", 12),
+                                             width=8)
+            self.alarm_time_entry.pack(side="left", padx=(0, 8))
+            self.alarm_time_entry.insert(0, "07:30")
+            self.alarm_label_entry = tk.Entry(form, font=("Segoe UI", 12))
+            self.alarm_label_entry.pack(side="left", fill="x", expand=True,
+                                        padx=(0, 8))
+            self.alarm_label_entry.insert(0, "Wake up")
+            self.alarm_add_button = tk.Button(
+                form, text="Add alarm", font=("Segoe UI", 11), bd=0,
+                command=self._add_alarm, width=10)
+            self.alarm_add_button.pack(side="left")
+            self.alarm_hint = tk.Label(
+                self.alarms_frame,
+                text="Enter a time as HH:MM, 24 hour format, plus a label.",
+                font=("Segoe UI", 10))
+            self.alarm_hint.pack(pady=(0, 8))
+            self.alarm_list = tk.Listbox(
+                self.alarms_frame, font=("Segoe UI", 11), height=8,
+                bd=0, highlightthickness=0)
+            self.alarm_list.pack(fill="both", expand=True, padx=20, pady=4)
+            self.alarm_delete_button = tk.Button(
+                self.alarms_frame, text="Delete selected",
+                font=("Segoe UI", 11), bd=0, command=self._delete_alarm)
+            self.alarm_delete_button.pack(pady=12)
+
+        def _add_alarm(self):
+            try:
+                alarm_time = parse_alarm_time(self.alarm_time_entry.get())
+            except ValueError as exc:
+                if messagebox is not None:
+                    messagebox.showerror("Invalid time", str(exc))
+                return
+            label = self.alarm_label_entry.get().strip() or "Alarm"
+            self.alarms.append({"time": alarm_time, "label": label,
+                                "enabled": True})
+            self._refresh_alarm_list()
+
+        def _delete_alarm(self):
+            selection = self.alarm_list.curselection()
+            if not selection:
+                return
+            del self.alarms[selection[0]]
+            self._refresh_alarm_list()
+
+        def _refresh_alarm_list(self):
+            self.alarm_list.delete(0, "end")
+            for alarm in self.alarms:
+                self.alarm_list.insert(
+                    "end", "%s  %s" % (alarm["time"], alarm["label"]))
+
+        def _check_alarms(self, now):
+            for alarm in self.alarms:
+                key = (now.date().isoformat(), alarm["time"])
+                if alarm_due(alarm, now) and self._last_fired != key:
+                    self._last_fired = key
+                    beep()
+                    if messagebox is not None:
+                        messagebox.showinfo(
+                            "Alarm",
+                            "%s: %s" % (alarm["time"], alarm["label"]))
+
         def _draw_analog(self, now):
             canvas = self.analog_canvas
             theme = THEMES[self.theme_name]
@@ -538,6 +608,18 @@ if tk is not None:
                                  activeforeground=theme["button_fg"])
             self.sw_laps.configure(bg=bg, fg=theme["fg"],
                                    selectbackground=theme["button"])
+            self.alarms_frame.configure(bg=bg)
+            for widget in (self.alarm_hint,):
+                widget.configure(bg=bg, fg=theme["muted"])
+            for widget in (self.alarm_time_entry, self.alarm_label_entry):
+                widget.configure(bg=theme["button"], fg=theme["button_fg"],
+                                 insertbackground=theme["button_fg"])
+            for button in (self.alarm_add_button, self.alarm_delete_button):
+                button.configure(bg=theme["button"], fg=theme["button_fg"],
+                                 activebackground=theme["button"],
+                                 activeforeground=theme["button_fg"])
+            self.alarm_list.configure(bg=bg, fg=theme["fg"],
+                                      selectbackground=theme["button"])
             self.world_frame.configure(bg=bg)
             for name_label, time_label in self.world_labels.values():
                 name_label.master.configure(bg=bg)
@@ -557,6 +639,7 @@ if tk is not None:
                 city_time = world_clock_time(now, offset)
                 label = self.world_labels[city][1]
                 label.configure(text=format_time(city_time))
+            self._check_alarms(now)
             palette = palette_for_hour(now.hour)
             if palette != self._palette:
                 self._palette = palette
