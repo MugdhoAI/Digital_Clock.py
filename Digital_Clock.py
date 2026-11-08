@@ -386,11 +386,20 @@ if tk is not None:
                 else:
                     frame.pack_forget()
             self.apply_theme()
+            self._save_settings()
 
         def cycle_theme(self):
             self.theme_name = next_theme(self.theme_name)
             self.settings["theme"] = self.theme_name
             self.apply_theme()
+            self._save_settings()
+
+        def _save_settings(self):
+            """Write the current theme, geometry, and mode to disk."""
+            self.settings["geometry"] = self.root.geometry()
+            self.settings["theme"] = self.theme_name
+            self.settings["mode"] = self.mode
+            save_settings(settings_path(), self.settings)
 
         # -- clock tab -----------------------------------------------------
 
@@ -647,10 +656,7 @@ if tk is not None:
             self.root.after(200, self._tick)
 
         def close(self):
-            self.settings["geometry"] = self.root.geometry()
-            self.settings["theme"] = self.theme_name
-            self.settings["mode"] = self.mode
-            save_settings(settings_path(), self.settings)
+            self._save_settings()
             self.root.destroy()
 
 
