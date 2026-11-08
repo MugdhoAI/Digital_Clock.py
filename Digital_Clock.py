@@ -391,6 +391,20 @@ if tk is not None:
                 self.clock_frame, width=240, height=240,
                 highlightthickness=0)
             self.analog_canvas.pack(pady=8)
+            self.world_frame = tk.Frame(self.clock_frame)
+            self.world_frame.pack(pady=(4, 12))
+            self.world_labels = {}
+            for city in WORLD_CLOCK_OFFSETS:
+                row = tk.Frame(self.world_frame)
+                row.pack(fill="x", padx=20)
+                name_label = tk.Label(row, text=city,
+                                      font=("Segoe UI", 11), width=10,
+                                      anchor="w")
+                name_label.pack(side="left")
+                time_label = tk.Label(row, font=("Segoe UI", 11, "bold"),
+                                      anchor="e")
+                time_label.pack(side="right")
+                self.world_labels[city] = (name_label, time_label)
 
         def _draw_analog(self, now):
             canvas = self.analog_canvas
@@ -443,6 +457,11 @@ if tk is not None:
             self.time_label.configure(bg=bg, fg=theme["fg"])
             self.date_label.configure(bg=bg, fg=theme["muted"])
             self.analog_canvas.configure(bg=bg)
+            self.world_frame.configure(bg=bg)
+            for name_label, time_label in self.world_labels.values():
+                name_label.master.configure(bg=bg)
+                name_label.configure(bg=bg, fg=theme["muted"])
+                time_label.configure(bg=bg, fg=theme["fg"])
 
         # -- main loop -----------------------------------------------------
 
@@ -451,6 +470,10 @@ if tk is not None:
             self.time_label.configure(text=format_time(now))
             self.date_label.configure(text=format_date(now))
             self._draw_analog(now)
+            for city, offset in WORLD_CLOCK_OFFSETS.items():
+                city_time = world_clock_time(now, offset)
+                label = self.world_labels[city][1]
+                label.configure(text=format_time(city_time))
             palette = palette_for_hour(now.hour)
             if palette != self._palette:
                 self._palette = palette
