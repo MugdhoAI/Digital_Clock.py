@@ -25,7 +25,9 @@ app with real UI/UX and software design decisions behind it.
 - **Alarms** — set multiple labeled alarms; a popup and audible beep fire
   when one is triggered.
 - **Persistent settings** — last-used theme, window position, and active
-  mode are saved to `settings.json` and restored on the next launch.
+  mode are saved to `settings.json` and restored on the next launch. Settings
+  are written as soon as the theme or mode changes, not only when the app
+  closes.
 
 ## Why this project (design notes)
 
@@ -67,6 +69,17 @@ The window remembers its last position and theme between runs via
 `settings.json`, which is created automatically next to the script on first
 launch. This file is user specific runtime state, not source code — it's
 listed in `.gitignore` so it won't be committed to the repository.
+
+## Tests
+
+The pure logic lives in functions that do not touch Tkinter, so it is
+covered by unit tests that need no display: time formatting, world clock
+offsets, stopwatch formatting, alarm parsing, analog hand geometry, themes,
+and settings load/save.
+
+```bash
+python -m unittest discover -s tests -v
+```
 
 ## Controls
 
