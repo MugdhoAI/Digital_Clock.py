@@ -1,0 +1,484 @@
+"""Extraordinary Digital Clock.
+
+A desktop clock application built with Python and Tkinter. It goes well
+beyond a basic ``datetime`` + ``Label`` tutorial project into a small
+multi-feature desktop app with real UI/UX and software design decisions
+behind it.
+
+Features:
+
+- Custom window chrome: borderless, draggable window with its own
+  minimize and close controls instead of relying on the OS title bar.
+- Time of day reactive background: the palette shifts between day and
+  night tones depending on the current hour, recalculated every 30 seconds.
+- Digital plus analog display: a live analog clock face drawn on a Canvas
+  using trigonometry for the hour, minute, and second hands, alongside
+  the standard digital readout and full date.
+- World clock panel: five configurable timezones shown as fixed UTC
+  offsets, updating live alongside the local clock.
+- Theme switcher: three built-in themes swappable instantly via a click,
+  no restart required.
+- Stopwatch: start, stop, lap, and reset, with a scrolling lap history.
+- Alarms: set multiple labeled alarms; a popup and audible beep fire
+  when one is triggered.
+- Persistent settings: last-used theme, window position, and active mode
+  are saved to ``settings.json`` and restored on the next launch.
+
+Only the Python standard library is used. World clock times use fixed UTC
+offsets rather than a timezone database, so no ``tzdata`` install is
+needed. The trade-off: offsets are hardcoded to each city's current
+standard, so they will be off by an hour during daylight saving time
+transitions until manually updated in ``WORLD_CLOCK_OFFSETS``.
+
+Run it with::
+
+    python Digital_Clock.py
+
+The pure helper functions at the top of this file (time formatting,
+world clock offsets, stopwatch formatting, alarm parsing, hand geometry,
+and settings load/save) are deliberately independent of Tkinter so they
+can be unit tested without a display. See ``tests/test_clock.py``.
+"""
+
+import json
+import math
+import os
+import sys
+import time
+from datetime import datetime, timedelta
+
+try:
+    import tkinter as tk
+    from tkinter import messagebox
+except ImportError:  # pragma: no cover - Tkinter missing on minimal installs
+    tk = None
+    messagebox = None
+
+try:
+    import winsound
+except ImportError:  # winsound only exists on Windows
+    winsound = None
+
+
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
+
+#: City name to fixed offset from UTC, in hours. Edit these values to add
+#: a city or to correct an offset after a daylight saving time change.
+WORLD_CLOCK_OFFSETS = {
+    "Dhaka": 6,
+    "Seoul": 9,
+    "Riyadh": 3,
+    "Berlin": 1,
+    "Dublin": 0,
+}
+
+#: Built-in themes. Each theme maps a role name to a hex colour.
+THEMES = {
+    "Cyberpunk": {
+        "bg": "#0d0221",
+        "bg_day": "#1b0a3d",
+        "bg_night": "#0d0221",
+        "fg": "#00f0ff",
+        "accent": "#ff2a6d",
+        "muted": "#8a7fb8",
+        "button": "#2a1a4a",
+        "button_fg": "#00f0ff",
+    },
+    "Minimal Light": {
+        "bg": "#f5f5f0",
+        "bg_day": "#ffffff",
+        "bg_night": "#e8e8e2",
+        "fg": "#1a1a1a",
+        "accent": "#2563eb",
+        "muted": "#6b7280",
+        "button": "#e5e7eb",
+        "button_fg": "#1a1a1a",
+    },
+    "Old Money": {
+        "bg": "#1c1a16",
+        "bg_day": "#2a251c",
+        "bg_night": "#1c1a16",
+        "fg": "#d4af37",
+        "accent": "#8c6a1f",
+        "muted": "#a89f8d",
+        "button": "#3a3226",
+        "button_fg": "#d4af37",
+    },
+}
+
+THEME_ORDER = ["Cyberpunk", "Minimal Light", "Old Money"]
+
+#: Hour at which day tones start, and hour at which night tones start.
+DAY_START_HOUR = 6
+NIGHT_START_HOUR = 18
+
+DEFAULT_SETTINGS = {
+    "theme": "Cyberpunk",
+    "geometry": "520x660+100+100",
+    "mode": "Clock",
+}
+
+SETTINGS_FILENAME = "settings.json"
+
+
+def settings_path():
+    """Return the path of the settings file, next to this script."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(here, SETTINGS_FILENAME)
+
+
+# ---------------------------------------------------------------------------
+# Pure helpers (no Tkinter, unit tested in tests/test_clock.py)
+# ---------------------------------------------------------------------------
+
+def format_time(moment):
+    """Format a datetime as a 24 hour clock string, ``HH:MM:SS``."""
+    return moment.strftime("%H:%M:%S")
+
+
+def format_date(moment):
+    """Format a datetime as a full date, for example ``Monday, 09 November 2026``."""
+    return moment.strftime("%A, %d %B %Y")
+
+
+def format_stopwatch(elapsed_seconds):
+    """Format an elapsed time as ``MM:SS.cc`` or ``HH:MM:SS.cc``.
+
+    ``cc`` is hundredths of a second. Hours are shown only once the
+    elapsed time reaches one hour.
+    """
+    if elapsed_seconds < 0:
+        raise ValueError("elapsed time cannot be negative")
+    total_centiseconds = int(round(elapsed_seconds * 100))
+    hours, remainder = divmod(total_centiseconds, 360000)
+    minutes, remainder = divmod(remainder, 6000)
+    seconds, centiseconds = divmod(remainder, 100)
+    if hours:
+        return "%02d:%02d:%02d.%02d" % (hours, minutes, seconds, centiseconds)
+    return "%02d:%02d.%02d" % (minutes, seconds, centiseconds)
+
+
+def world_clock_time(now, offset_hours):
+    """Return ``now`` shifted by a fixed UTC offset, in hours."""
+    return now + timedelta(hours=offset_hours)
+
+
+def parse_alarm_time(text):
+    """Parse and normalise an alarm time entered as ``HH:MM`` (24 hour).
+
+    Returns the normalised ``HH:MM`` string. Raises ``ValueError`` with
+    a plain message for anything that is not a valid 24 hour time.
+    """
+    parts = text.strip().split(":")
+    if len(parts) != 2:
+        raise ValueError("use HH:MM, 24 hour format")
+    try:
+        hour = int(parts[0])
+        minute = int(parts[1])
+    except ValueError:
+        raise ValueError("use HH:MM, 24 hour format") from None
+    if not 0 <= hour <= 23:
+        raise ValueError("hour must be 00 to 23")
+    if not 0 <= minute <= 59:
+        raise ValueError("minute must be 00 to 59")
+    return "%02d:%02d" % (hour, minute)
+
+
+def alarm_due(alarm, now):
+    """Return True when an enabled alarm should fire at ``now``.
+
+    ``alarm`` is a dict with ``time`` (``HH:MM``), ``label``, and
+    ``enabled`` keys. An alarm fires during the whole minute it names;
+    the app records which minute it already fired in so it rings once.
+    """
+    if not alarm.get("enabled", True):
+        return False
+    return now.strftime("%H:%M") == alarm.get("time")
+
+
+def hand_angles(moment):
+    """Return the (hour, minute, second) hand angles in degrees.
+
+    Angles are measured clockwise from 12 o'clock, so 3 o'clock is
+    90 degrees and 6 o'clock is 180 degrees.
+    """
+    second = moment.second * 6
+    minute = (moment.minute + moment.second / 60.0) * 6
+    hour = ((moment.hour % 12) + moment.minute / 60.0) * 30
+    return hour, minute, second
+
+
+def hand_endpoint(center_x, center_y, length, angle_degrees):
+    """Return the (x, y) endpoint of a clock hand at a given angle.
+
+    The angle is measured clockwise from 12 o'clock, matching
+    :func:`hand_angles`. Canvas y grows downwards, hence the minus sign.
+    """
+    radians = math.radians(angle_degrees)
+    x = center_x + length * math.sin(radians)
+    y = center_y - length * math.cos(radians)
+    return x, y
+
+
+def palette_for_hour(hour):
+    """Return ``"day"`` for daytime hours and ``"night"`` otherwise.
+
+    Day runs from 06:00 up to, but not including, 18:00.
+    """
+    if DAY_START_HOUR <= hour < NIGHT_START_HOUR:
+        return "day"
+    return "night"
+
+
+def next_theme(current):
+    """Return the next theme name after ``current``, cycling the list."""
+    if current not in THEME_ORDER:
+        return THEME_ORDER[0]
+    index = THEME_ORDER.index(current)
+    return THEME_ORDER[(index + 1) % len(THEME_ORDER)]
+
+
+def load_settings(path):
+    """Load settings from ``path``, falling back to defaults.
+
+    A missing file, a corrupt file, or unknown keys all fall back to
+    :data:`DEFAULT_SETTINGS` for the affected values, never raising.
+    """
+    settings = dict(DEFAULT_SETTINGS)
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            stored = json.load(handle)
+    except (OSError, ValueError):
+        return settings
+    if not isinstance(stored, dict):
+        return settings
+    for key in DEFAULT_SETTINGS:
+        if key in stored:
+            settings[key] = stored[key]
+    if settings["theme"] not in THEMES:
+        settings["theme"] = DEFAULT_SETTINGS["theme"]
+    if settings["mode"] not in ("Clock", "Stopwatch", "Alarms"):
+        settings["mode"] = DEFAULT_SETTINGS["mode"]
+    return settings
+
+
+def save_settings(path, settings):
+    """Save ``settings`` as JSON to ``path``. Returns True on success."""
+    try:
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(settings, handle, indent=2, sort_keys=True)
+    except OSError:
+        return False
+    return True
+
+
+def beep():
+    """Sound the alarm beep: ``winsound`` on Windows, terminal bell elsewhere."""
+    if winsound is not None:
+        try:
+            winsound.Beep(880, 500)
+        except RuntimeError:
+            print("\a", end="", flush=True)
+    else:
+        print("\a", end="", flush=True)
+
+
+# ---------------------------------------------------------------------------
+# Application
+# ---------------------------------------------------------------------------
+
+if tk is not None:
+
+    class DigitalClockApp:
+        """The Tkinter application: window chrome, clock, themes."""
+
+        def __init__(self, root, settings):
+            self.root = root
+            self.settings = settings
+            self.theme_name = settings["theme"]
+            self.mode = settings["mode"]
+            self.alarms = []
+            self._last_fired = None
+            self._drag_offset = (0, 0)
+            self._palette = palette_for_hour(datetime.now().hour)
+
+            self.root.overrideredirect(True)
+            self.root.geometry(settings["geometry"])
+            self.root.protocol("WM_DELETE_WINDOW", self.close)
+            self.root.bind("<Escape>", lambda event: self.close())
+
+            self._build_title_bar()
+            self._build_tab_bar()
+            self._build_clock_tab()
+            self.clock_frame.pack(fill="both", expand=True)
+
+            self.apply_theme()
+            self._tick()
+
+        # -- window chrome -------------------------------------------------
+
+        def _build_title_bar(self):
+            self.title_bar = tk.Frame(self.root, height=36)
+            self.title_bar.pack(fill="x")
+            self.title_bar.pack_propagate(False)
+            self.title_label = tk.Label(
+                self.title_bar, text="Extraordinary Digital Clock",
+                font=("Segoe UI", 11, "bold"))
+            self.title_label.pack(side="left", padx=10)
+            self.min_button = tk.Button(
+                self.title_bar, text="\u2013", font=("Segoe UI", 12),
+                bd=0, command=self.root.iconify)
+            self.min_button.pack(side="right", padx=2)
+            self.close_button = tk.Button(
+                self.title_bar, text="\u2715", font=("Segoe UI", 11),
+                bd=0, command=self.close)
+            self.close_button.pack(side="right", padx=2)
+            for widget in (self.title_bar, self.title_label):
+                widget.bind("<Button-1>", self._drag_start)
+                widget.bind("<B1-Motion>", self._drag_move)
+
+        def _drag_start(self, event):
+            self._drag_offset = (event.x_root, event.y_root)
+
+        def _drag_move(self, event):
+            dx = event.x_root - self._drag_offset[0]
+            dy = event.y_root - self._drag_offset[1]
+            x = self.root.winfo_x() + dx
+            y = self.root.winfo_y() + dy
+            self.root.geometry("+%d+%d" % (x, y))
+            self._drag_offset = (event.x_root, event.y_root)
+
+        # -- tabs ----------------------------------------------------------
+
+        def _build_tab_bar(self):
+            self.tab_bar = tk.Frame(self.root, height=40)
+            self.tab_bar.pack(fill="x")
+            self.tab_bar.pack_propagate(False)
+            self.tab_buttons = {}
+            for mode in ("Clock", "Stopwatch", "Alarms"):
+                button = tk.Button(
+                    self.tab_bar, text=mode, font=("Segoe UI", 11),
+                    bd=0, command=lambda m=mode: self.show_mode(m))
+                button.pack(side="left", padx=4, pady=4)
+                self.tab_buttons[mode] = button
+            self.theme_button = tk.Button(
+                self.tab_bar, text="", font=("Segoe UI", 11),
+                bd=0, command=self.cycle_theme)
+            self.theme_button.pack(side="right", padx=8, pady=4)
+
+        def show_mode(self, mode):
+            """Switch the visible tab. Overridden as tabs are added."""
+            self.mode = mode
+
+        def cycle_theme(self):
+            self.theme_name = next_theme(self.theme_name)
+            self.settings["theme"] = self.theme_name
+            self.apply_theme()
+
+        # -- clock tab -----------------------------------------------------
+
+        def _build_clock_tab(self):
+            self.clock_frame = tk.Frame(self.root)
+            self.time_label = tk.Label(
+                self.clock_frame, font=("Segoe UI", 44, "bold"))
+            self.time_label.pack(pady=(24, 0))
+            self.date_label = tk.Label(
+                self.clock_frame, font=("Segoe UI", 14))
+            self.date_label.pack(pady=(0, 12))
+            self.analog_canvas = tk.Canvas(
+                self.clock_frame, width=240, height=240,
+                highlightthickness=0)
+            self.analog_canvas.pack(pady=8)
+
+        def _draw_analog(self, now):
+            canvas = self.analog_canvas
+            theme = THEMES[self.theme_name]
+            canvas.delete("all")
+            cx, cy = 120, 120
+            canvas.create_oval(10, 10, 230, 230, outline=theme["fg"], width=2)
+            for hour_mark in range(12):
+                angle = hour_mark * 30
+                outer = hand_endpoint(cx, cy, 108, angle)
+                inner = hand_endpoint(cx, cy, 96, angle)
+                canvas.create_line(outer[0], outer[1], inner[0], inner[1],
+                                   fill=theme["fg"], width=2)
+            hour_angle, minute_angle, second_angle = hand_angles(now)
+            for angle, length, width, colour in (
+                    (hour_angle, 55, 5, theme["fg"]),
+                    (minute_angle, 85, 3, theme["fg"]),
+                    (second_angle, 95, 1, theme["accent"])):
+                end = hand_endpoint(cx, cy, length, angle)
+                canvas.create_line(cx, cy, end[0], end[1],
+                                   fill=colour, width=width)
+            canvas.create_oval(cx - 5, cy - 5, cx + 5, cy + 5,
+                               fill=theme["accent"], outline=theme["accent"])
+
+        # -- theming -------------------------------------------------------
+
+        def apply_theme(self):
+            theme = THEMES[self.theme_name]
+            bg_key = "bg_day" if self._palette == "day" else "bg_night"
+            bg = theme[bg_key]
+            self.root.configure(bg=bg)
+            for widget in (self.title_bar, self.tab_bar, self.clock_frame):
+                widget.configure(bg=bg)
+            self.title_label.configure(bg=bg, fg=theme["fg"])
+            for button in (self.min_button, self.close_button):
+                button.configure(bg=bg, fg=theme["fg"],
+                                 activebackground=theme["button"],
+                                 activeforeground=theme["fg"])
+            for mode, button in self.tab_buttons.items():
+                button.configure(
+                    bg=theme["button"] if mode == self.mode else bg,
+                    fg=theme["button_fg"],
+                    activebackground=theme["button"],
+                    activeforeground=theme["button_fg"])
+            self.theme_button.configure(
+                text="\U0001f3a8 " + self.theme_name,
+                bg=bg, fg=theme["accent"],
+                activebackground=theme["button"],
+                activeforeground=theme["accent"])
+            self.time_label.configure(bg=bg, fg=theme["fg"])
+            self.date_label.configure(bg=bg, fg=theme["muted"])
+            self.analog_canvas.configure(bg=bg)
+
+        # -- main loop -----------------------------------------------------
+
+        def _tick(self):
+            now = datetime.now()
+            self.time_label.configure(text=format_time(now))
+            self.date_label.configure(text=format_date(now))
+            self._draw_analog(now)
+            palette = palette_for_hour(now.hour)
+            if palette != self._palette:
+                self._palette = palette
+                self.apply_theme()
+            self.root.after(200, self._tick)
+
+        def close(self):
+            self.settings["geometry"] = self.root.geometry()
+            self.settings["theme"] = self.theme_name
+            self.settings["mode"] = self.mode
+            save_settings(settings_path(), self.settings)
+            self.root.destroy()
+
+
+def main():
+    """Entry point: refuse to run headless without Tkinter, else start the app."""
+    if tk is None:
+        print("Tkinter is not available. On Ubuntu/Debian, install it with:",
+              file=sys.stderr)
+        print("    sudo apt install python3-tk", file=sys.stderr)
+        return 1
+    settings = load_settings(settings_path())
+    root = tk.Tk()
+    root.title("Extraordinary Digital Clock")
+    DigitalClockApp(root, settings)
+    root.mainloop()
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
