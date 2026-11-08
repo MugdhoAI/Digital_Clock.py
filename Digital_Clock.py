@@ -301,6 +301,10 @@ if tk is not None:
             self.mode = settings["mode"]
             self.alarms = []
             self._last_fired = None
+            self._sw_running = False
+            self._sw_start = 0.0
+            self._sw_elapsed = 0.0
+            self._sw_lap_times = []
             self._drag_offset = (0, 0)
             self._palette = palette_for_hour(datetime.now().hour)
 
@@ -312,7 +316,8 @@ if tk is not None:
             self._build_title_bar()
             self._build_tab_bar()
             self._build_clock_tab()
-            self.clock_frame.pack(fill="both", expand=True)
+            self._build_stopwatch_tab()
+            self.show_mode(self.mode)
 
             self.apply_theme()
             self._tick()
@@ -369,8 +374,16 @@ if tk is not None:
             self.theme_button.pack(side="right", padx=8, pady=4)
 
         def show_mode(self, mode):
-            """Switch the visible tab. Overridden as tabs are added."""
+            """Switch the visible tab and remember it in settings."""
             self.mode = mode
+            self.settings["mode"] = mode
+            for name, frame in (("Clock", self.clock_frame),
+                                ("Stopwatch", self.stopwatch_frame)):
+                if name == mode:
+                    frame.pack(fill="both", expand=True)
+                else:
+                    frame.pack_forget()
+            self.apply_theme()
 
         def cycle_theme(self):
             self.theme_name = next_theme(self.theme_name)
@@ -405,6 +418,64 @@ if tk is not None:
                                       anchor="e")
                 time_label.pack(side="right")
                 self.world_labels[city] = (name_label, time_label)
+
+        # -- stopwatch tab -------------------------------------------------
+
+        def _build_stopwatch_tab(self):
+            self.stopwatch_frame = tk.Frame(self.root)
+            self.sw_label = tk.Label(
+                self.stopwatch_frame, font=("Segoe UI", 40, "bold"))
+            self.sw_label.pack(pady=(32, 8))
+            self.sw_button_row = tk.Frame(self.stopwatch_frame)
+            self.sw_button_row.pack(pady=8)
+            self.sw_start_button = tk.Button(
+                self.sw_button_row, text="Start", font=("Segoe UI", 11),
+                bd=0, command=self._sw_toggle, width=10)
+            self.sw_start_button.pack(side="left", padx=4)
+            self.sw_lap_button = tk.Button(
+                self.sw_button_row, text="Lap", font=("Segoe UI", 11),
+                bd=0, command=self._sw_lap, width=10)
+            self.sw_lap_button.pack(side="left", padx=4)
+            self.sw_reset_button = tk.Button(
+                self.sw_button_row, text="Reset", font=("Segoe UI", 11),
+                bd=0, command=self._sw_reset, width=10)
+            self.sw_reset_button.pack(side="left", padx=4)
+            self.sw_laps = tk.Listbox(
+                self.stopwatch_frame, font=("Segoe UI", 11), height=8,
+                bd=0, highlightthickness=0)
+            self.sw_laps.pack(fill="both", expand=True, padx=20, pady=12)
+
+        def _sw_current_elapsed(self):
+            if self._sw_running:
+                return self._sw_elapsed + (time.monotonic() - self._sw_start)
+            return self._sw_elapsed
+
+        def _sw_toggle(self):
+            if self._sw_running:
+                self._sw_elapsed = self._sw_current_elapsed()
+                self._sw_running = False
+                self.sw_start_button.configure(text="Start")
+            else:
+                self._sw_start = time.monotonic()
+                self._sw_running = True
+                self.sw_start_button.configure(text="Stop")
+
+        def _sw_lap(self):
+            if not self._sw_running:
+                return
+            lap_time = self._sw_current_elapsed()
+            self._sw_lap_times.append(lap_time)
+            self.sw_laps.insert(
+                "end", "Lap %d  %s" % (len(self._sw_lap_times),
+                                       format_stopwatch(lap_time)))
+            self.sw_laps.see("end")
+
+        def _sw_reset(self):
+            self._sw_running = False
+            self._sw_elapsed = 0.0
+            self._sw_lap_times = []
+            self.sw_start_button.configure(text="Start")
+            self.sw_laps.delete(0, "end")
 
         def _draw_analog(self, now):
             canvas = self.analog_canvas
@@ -457,6 +528,16 @@ if tk is not None:
             self.time_label.configure(bg=bg, fg=theme["fg"])
             self.date_label.configure(bg=bg, fg=theme["muted"])
             self.analog_canvas.configure(bg=bg)
+            self.stopwatch_frame.configure(bg=bg)
+            self.sw_label.configure(bg=bg, fg=theme["fg"])
+            self.sw_button_row.configure(bg=bg)
+            for button in (self.sw_start_button, self.sw_lap_button,
+                           self.sw_reset_button):
+                button.configure(bg=theme["button"], fg=theme["button_fg"],
+                                 activebackground=theme["button"],
+                                 activeforeground=theme["button_fg"])
+            self.sw_laps.configure(bg=bg, fg=theme["fg"],
+                                   selectbackground=theme["button"])
             self.world_frame.configure(bg=bg)
             for name_label, time_label in self.world_labels.values():
                 name_label.master.configure(bg=bg)
@@ -470,6 +551,8 @@ if tk is not None:
             self.time_label.configure(text=format_time(now))
             self.date_label.configure(text=format_date(now))
             self._draw_analog(now)
+            self.sw_label.configure(
+                text=format_stopwatch(self._sw_current_elapsed()))
             for city, offset in WORLD_CLOCK_OFFSETS.items():
                 city_time = world_clock_time(now, offset)
                 label = self.world_labels[city][1]
