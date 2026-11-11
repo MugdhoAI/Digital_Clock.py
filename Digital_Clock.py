@@ -300,7 +300,7 @@ if tk is not None:
             self.theme_name = settings["theme"]
             self.mode = settings["mode"]
             self.alarms = []
-            self._last_fired = None
+            self._fired_alarms = set()
             self._sw_running = False
             self._sw_start = 0.0
             self._sw_elapsed = 0.0
@@ -546,10 +546,17 @@ if tk is not None:
                     "end", "%s  %s" % (alarm["time"], alarm["label"]))
 
         def _check_alarms(self, now):
+            today = now.date().isoformat()
+            # Forget keys from earlier days so the set stays small.
+            self._fired_alarms = {
+                key for key in self._fired_alarms if key[0] == today}
             for alarm in self.alarms:
-                key = (now.date().isoformat(), alarm["time"])
-                if alarm_due(alarm, now) and self._last_fired != key:
-                    self._last_fired = key
+                # The fired key is per alarm, not one slot shared by
+                # all of them: with a single shared (date, time) key,
+                # a second alarm set for the same minute never rang.
+                key = (today, alarm["time"], alarm["label"])
+                if alarm_due(alarm, now) and key not in self._fired_alarms:
+                    self._fired_alarms.add(key)
                     beep()
                     if messagebox is not None:
                         messagebox.showinfo(

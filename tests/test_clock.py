@@ -88,6 +88,72 @@ class TestAlarms(unittest.TestCase):
         self.assertFalse(clock.alarm_due(alarm, datetime(2026, 11, 9, 7, 30, 0)))
 
 
+@unittest.skipIf(clock.tk is None, "Tkinter is not available")
+class TestAlarmFiring(unittest.TestCase):
+    """Exercise DigitalClockApp._check_alarms without a display.
+
+    The app object is created without __init__ (so no window is built),
+    and the module level beep/messagebox are replaced with recorders.
+    """
+
+    def setUp(self):
+        self.beeps = []
+        self.popups = []
+        self._real_beep = clock.beep
+        self._real_messagebox = clock.messagebox
+        clock.beep = lambda: self.beeps.append(1)
+
+        popups = self.popups
+
+        class FakeMessagebox:
+            @staticmethod
+            def showinfo(title, message):
+                popups.append(message)
+
+        clock.messagebox = FakeMessagebox
+
+    def tearDown(self):
+        clock.beep = self._real_beep
+        clock.messagebox = self._real_messagebox
+
+    def make_app(self, alarms):
+        app = clock.DigitalClockApp.__new__(clock.DigitalClockApp)
+        app.alarms = alarms
+        app._last_fired = None     # fired-state attribute before the fix
+        app._fired_alarms = set()  # fired-state attribute after the fix
+        return app
+
+    def test_two_alarms_in_the_same_minute_both_fire(self):
+        # Regression test: the fired key used to be one (date, time)
+        # slot shared by every alarm, so the second alarm set for
+        # 07:30 was silently swallowed.
+        app = self.make_app([
+            {"time": "07:30", "label": "Wake up", "enabled": True},
+            {"time": "07:30", "label": "Take medicine", "enabled": True},
+        ])
+        app._check_alarms(datetime(2026, 11, 9, 7, 30, 0))
+        self.assertEqual(len(self.beeps), 2)
+        self.assertEqual(len(self.popups), 2)
+        self.assertTrue(any("Wake up" in p for p in self.popups))
+        self.assertTrue(any("Take medicine" in p for p in self.popups))
+
+    def test_alarm_rings_once_per_minute(self):
+        app = self.make_app([
+            {"time": "07:30", "label": "Wake up", "enabled": True},
+        ])
+        app._check_alarms(datetime(2026, 11, 9, 7, 30, 0))
+        app._check_alarms(datetime(2026, 11, 9, 7, 30, 45))
+        self.assertEqual(len(self.beeps), 1)
+
+    def test_alarm_fires_again_the_next_day(self):
+        app = self.make_app([
+            {"time": "07:30", "label": "Wake up", "enabled": True},
+        ])
+        app._check_alarms(datetime(2026, 11, 9, 7, 30, 0))
+        app._check_alarms(datetime(2026, 11, 10, 7, 30, 0))
+        self.assertEqual(len(self.beeps), 2)
+
+
 class TestAnalogGeometry(unittest.TestCase):
     def test_hand_angles(self):
         self.assertEqual(clock.hand_angles(datetime(2026, 11, 9, 3, 0, 0)),
