@@ -257,6 +257,19 @@ def alarm_due(alarm, now):
     return now.strftime("%H:%M") == alarm.get("time")
 
 
+def toggle_alarm_enabled(alarms, index):
+    """Flip the ``enabled`` flag of alarm ``index`` and return its new value.
+
+    An alarm without an ``enabled`` key counts as enabled, so toggling it
+    disables it. Raises ``IndexError`` for an index outside the list.
+    """
+    if index < 0 or index >= len(alarms):
+        raise IndexError("alarm index out of range")
+    alarm = alarms[index]
+    alarm["enabled"] = not alarm.get("enabled", True)
+    return alarm["enabled"]
+
+
 def hand_angles(moment):
     """Return the (hour, minute, second) hand angles in degrees.
 
@@ -646,13 +659,16 @@ if tk is not None:
             self.alarm_add_button.pack(side="left")
             self.alarm_hint = tk.Label(
                 self.alarms_frame,
-                text="Enter a time as HH:MM, 24 hour format, plus a label.",
+                text="Enter a time as HH:MM, 24 hour format, plus a label. "
+                     "Double-click an alarm to enable or disable it.",
                 font=("Segoe UI", 10))
             self.alarm_hint.pack(pady=(0, 8))
             self.alarm_list = tk.Listbox(
                 self.alarms_frame, font=("Segoe UI", 11), height=8,
                 bd=0, highlightthickness=0)
             self.alarm_list.pack(fill="both", expand=True, padx=20, pady=4)
+            self.alarm_list.bind("<Double-Button-1>",
+                                 lambda event: self._toggle_alarm())
             self.alarm_delete_button = tk.Button(
                 self.alarms_frame, text="Delete selected",
                 font=("Segoe UI", 11), bd=0, command=self._delete_alarm)
@@ -677,11 +693,21 @@ if tk is not None:
             del self.alarms[selection[0]]
             self._refresh_alarm_list()
 
+        def _toggle_alarm(self):
+            selection = self.alarm_list.curselection()
+            if not selection:
+                return
+            toggle_alarm_enabled(self.alarms, selection[0])
+            self._refresh_alarm_list()
+
         def _refresh_alarm_list(self):
             self.alarm_list.delete(0, "end")
             for alarm in self.alarms:
-                self.alarm_list.insert(
-                    "end", "%s  %s" % (alarm["time"], alarm["label"]))
+                if alarm.get("enabled", True):
+                    text = "%s  %s" % (alarm["time"], alarm["label"])
+                else:
+                    text = "[off]  %s  %s" % (alarm["time"], alarm["label"])
+                self.alarm_list.insert("end", text)
 
         def _check_alarms(self, now):
             today = now.date().isoformat()
