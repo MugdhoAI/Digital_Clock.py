@@ -45,6 +45,43 @@ class TestFormatting(unittest.TestCase):
         with self.assertRaises(ValueError):
             clock.format_stopwatch(-1)
 
+    def test_lap_split_seconds(self):
+        laps = [5.5, 12.25, 20.0]
+        self.assertEqual(clock.lap_split_seconds(laps, 0), 5.5)
+        self.assertEqual(clock.lap_split_seconds(laps, 1), 6.75)
+        self.assertEqual(clock.lap_split_seconds(laps, 2), 7.75)
+
+    def test_lap_split_seconds_rejects_bad_index(self):
+        with self.assertRaises(IndexError):
+            clock.lap_split_seconds([5.5], 1)
+        with self.assertRaises(IndexError):
+            clock.lap_split_seconds([5.5], -1)
+        with self.assertRaises(IndexError):
+            clock.lap_split_seconds([], 0)
+
+
+class TestPomodoro(unittest.TestCase):
+    def test_format_countdown(self):
+        self.assertEqual(clock.format_countdown(1500), "25:00")
+        self.assertEqual(clock.format_countdown(65), "01:05")
+        self.assertEqual(clock.format_countdown(0), "00:00")
+        self.assertEqual(clock.format_countdown(3599), "59:59")
+        self.assertEqual(clock.format_countdown(3600), "01:00:00")
+        self.assertEqual(clock.format_countdown(3661), "01:01:01")
+
+    def test_format_countdown_clamps_negative(self):
+        self.assertEqual(clock.format_countdown(-5), "00:00")
+
+    def test_pomodoro_next_phase(self):
+        self.assertEqual(clock.pomodoro_next_phase("Focus"), "Break")
+        self.assertEqual(clock.pomodoro_next_phase("Break"), "Focus")
+        self.assertEqual(clock.pomodoro_next_phase("Unknown"), "Focus")
+
+    def test_pomodoro_phase_seconds(self):
+        self.assertEqual(clock.pomodoro_phase_seconds("Focus"), 1500)
+        self.assertEqual(clock.pomodoro_phase_seconds("Break"), 300)
+        self.assertEqual(clock.pomodoro_phase_seconds("Unknown"), 1500)
+
 
 class TestWorldClock(unittest.TestCase):
     def test_positive_offset(self):
@@ -57,12 +94,18 @@ class TestWorldClock(unittest.TestCase):
         self.assertEqual(clock.world_clock_time(now, -5),
                          datetime(2026, 11, 8, 21, 0, 0))
 
+    def test_fractional_offset(self):
+        now = datetime(2026, 11, 9, 12, 0, 0)
+        self.assertEqual(clock.world_clock_time(now, 5.5),
+                         datetime(2026, 11, 9, 17, 30, 0))
+
     def test_configured_cities(self):
         self.assertEqual(clock.WORLD_CLOCK_OFFSETS["Dhaka"], 6)
         self.assertEqual(clock.WORLD_CLOCK_OFFSETS["Seoul"], 9)
         self.assertEqual(clock.WORLD_CLOCK_OFFSETS["Riyadh"], 3)
         self.assertEqual(clock.WORLD_CLOCK_OFFSETS["Berlin"], 1)
         self.assertEqual(clock.WORLD_CLOCK_OFFSETS["Dublin"], 0)
+        self.assertEqual(clock.WORLD_CLOCK_OFFSETS["Kolkata"], 5.5)
 
 
 class TestAlarms(unittest.TestCase):
@@ -86,6 +129,24 @@ class TestAlarms(unittest.TestCase):
     def test_alarm_due_disabled(self):
         alarm = {"time": "07:30", "label": "Wake up", "enabled": False}
         self.assertFalse(clock.alarm_due(alarm, datetime(2026, 11, 9, 7, 30, 0)))
+
+    def test_toggle_alarm_enabled(self):
+        alarms = [{"time": "07:30", "label": "Wake up", "enabled": True}]
+        self.assertFalse(clock.toggle_alarm_enabled(alarms, 0))
+        self.assertFalse(alarms[0]["enabled"])
+        self.assertTrue(clock.toggle_alarm_enabled(alarms, 0))
+        self.assertTrue(alarms[0]["enabled"])
+
+    def test_toggle_alarm_missing_key_counts_as_enabled(self):
+        alarms = [{"time": "07:30", "label": "Wake up"}]
+        self.assertFalse(clock.toggle_alarm_enabled(alarms, 0))
+        self.assertFalse(alarms[0]["enabled"])
+
+    def test_toggle_alarm_rejects_bad_index(self):
+        with self.assertRaises(IndexError):
+            clock.toggle_alarm_enabled([], 0)
+        with self.assertRaises(IndexError):
+            clock.toggle_alarm_enabled([{"time": "07:30"}], -1)
 
 
 @unittest.skipIf(clock.tk is None, "Tkinter is not available")
@@ -136,6 +197,20 @@ class TestAlarmFiring(unittest.TestCase):
         self.assertEqual(len(self.popups), 2)
         self.assertTrue(any("Wake up" in p for p in self.popups))
         self.assertTrue(any("Take medicine" in p for p in self.popups))
+
+    def test_two_identical_alarms_both_fire(self):
+        # Regression test: the fired key used to include the label, so
+        # two alarms with the same time and the same label shared one
+        # slot and only the first one rang.
+        app = self.make_app([
+            {"time": "07:30", "label": "Wake up", "enabled": True},
+            {"time": "07:30", "label": "Wake up", "enabled": True},
+        ])
+
+        app._check_alarms(datetime(2026, 11, 9, 7, 30, 0))
+
+        self.assertEqual(len(self.beeps), 2)
+        self.assertEqual(len(self.popups), 2)
 
     def test_alarm_rings_once_per_minute(self):
         app = self.make_app([
@@ -222,6 +297,16 @@ class TestSettings(unittest.TestCase):
             self.assertTrue(clock.save_settings(path, stored))
             self.assertEqual(clock.load_settings(path), stored)
 
+    def test_pomodoro_mode_is_kept(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "settings.json")
+            stored = {"theme": "Cyberpunk",
+                      "geometry": "520x660+100+100",
+                      "mode": "Pomodoro"}
+            with open(path, "w", encoding="utf-8") as handle:
+                json.dump(stored, handle)
+            self.assertEqual(clock.load_settings(path)["mode"], "Pomodoro")
+
     def test_unknown_theme_and_mode_fall_back(self):
         with tempfile.TemporaryDirectory() as directory:
             path = os.path.join(directory, "settings.json")
@@ -232,6 +317,30 @@ class TestSettings(unittest.TestCase):
             self.assertEqual(settings["theme"], "Cyberpunk")
             self.assertEqual(settings["mode"], "Clock")
             self.assertEqual(settings["geometry"], "400x500+10+20")
+
+    def test_invalid_geometry_falls_back(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "settings.json")
+            stored = {"theme": "Cyberpunk",
+                      "geometry": "not a geometry",
+                      "mode": "Clock"}
+            with open(path, "w", encoding="utf-8") as handle:
+                json.dump(stored, handle)
+            settings = clock.load_settings(path)
+            self.assertEqual(settings["geometry"],
+                             clock.DEFAULT_SETTINGS["geometry"])
+            self.assertEqual(settings["theme"], "Cyberpunk")
+
+    def test_non_string_geometry_falls_back(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "settings.json")
+            stored = {"theme": "Cyberpunk", "geometry": 123,
+                      "mode": "Clock"}
+            with open(path, "w", encoding="utf-8") as handle:
+                json.dump(stored, handle)
+            settings = clock.load_settings(path)
+            self.assertEqual(settings["geometry"],
+                             clock.DEFAULT_SETTINGS["geometry"])
 
     def test_beep_does_not_raise(self):
         clock.beep()
