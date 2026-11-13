@@ -564,11 +564,13 @@ if tk is not None:
             # Forget keys from earlier days so the set stays small.
             self._fired_alarms = {
                 key for key in self._fired_alarms if key[0] == today}
-            for alarm in self.alarms:
+            for index, alarm in enumerate(self.alarms):
                 # The fired key is per alarm, not one slot shared by
                 # all of them: with a single shared (date, time) key,
                 # a second alarm set for the same minute never rang.
-                key = (today, alarm["time"], alarm["label"])
+                # The index is part of the key too, so two alarms with
+                # the same time and the same label still ring separately.
+                key = (today, index, alarm["time"])
                 if alarm_due(alarm, now) and key not in self._fired_alarms:
                     self._fired_alarms.add(key)
                     beep()
