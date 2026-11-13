@@ -16,18 +16,23 @@ app with real UI/UX and software design decisions behind it.
 - **Digital + analog display** — a live analog clock face is drawn on a
   `Canvas` using trigonometry for the hour/minute/second hands, alongside the
   standard digital readout and full date.
-- **World clock panel** — five configurable timezones (Dhaka, Seoul, Riyadh,
-  Berlin, Dublin by default) shown as fixed UTC offsets, updating live
-  alongside the local clock.
+- **World clock panel**: six configurable timezones (Dhaka, Seoul, Riyadh,
+  Berlin, Dublin, Kolkata by default) shown as fixed UTC offsets, updating
+  live alongside the local clock. Offsets may be fractional, so half hour
+  zones such as Kolkata (UTC+05:30) work too.
 - **Theme switcher** — three built-in themes (Cyberpunk, Minimal Light, Old
   Money) swappable instantly via a click, no restart required.
-- **Stopwatch** — start/stop/lap/reset, with a scrolling lap history.
-- **Alarms** — set multiple labeled alarms; a popup and audible beep fire
-  when one is triggered.
-- **Persistent settings** — last-used theme, window position, and active
+- **Stopwatch**: start/stop/lap/reset, with a scrolling lap history. Each
+  lap shows its split time since the previous lap.
+- **Alarms**: set multiple labeled alarms; a popup and audible beep fire
+  when one is triggered. Double-click an alarm to enable or disable it.
+- **Pomodoro mode**: 25 minute focus sessions with 5 minute breaks, with a
+  count of completed focus sessions.
+- **Persistent settings**: last-used theme, window position, and active
   mode are saved to `settings.json` and restored on the next launch. Settings
   are written as soon as the theme or mode changes, not only when the app
-  closes.
+  closes. A corrupt settings file, or a saved window position the app cannot
+  use, falls back to the defaults instead of crashing.
 
 ## Why this project (design notes)
 
@@ -74,8 +79,9 @@ listed in `.gitignore` so it won't be committed to the repository.
 
 The pure logic lives in functions that do not touch Tkinter, so it is
 covered by unit tests that need no display: time formatting, world clock
-offsets, stopwatch formatting, alarm parsing, analog hand geometry, themes,
-and settings load/save.
+offsets, stopwatch formatting and lap splits, alarm parsing and toggling,
+analog hand geometry, Pomodoro countdown and phases, themes, and settings
+load/save.
 
 ```bash
 python -m unittest discover -s tests -v
@@ -84,7 +90,8 @@ python -m unittest discover -s tests -v
 ## Controls
 
 - **Drag** the title bar (or anywhere on the background) to move the window.
-- Click **Clock / Stopwatch / Alarms** tabs to switch modes.
+- Click **Clock / Stopwatch / Alarms / Pomodoro** tabs to switch modes.
+- **Double-click** an alarm in the list to enable or disable it.
 - Click the **🎨 theme name** in the top-right of the tab bar to cycle themes.
 - Press **Esc** or click **✕** to close the app.
 
@@ -93,7 +100,6 @@ python -m unittest discover -s tests -v
 - Automatic daylight saving time adjustment for world clock offsets
 - Weather integration via a free API alongside the time
 - Offline text-to-speech time announcements
-- A Pomodoro or focus session mode built on top of the stopwatch logic
 - Custom user-added timezones via the UI (currently edited via the
   `WORLD_CLOCK_OFFSETS` dictionary in the source file)
 

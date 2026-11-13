@@ -14,13 +14,17 @@ Features:
 - Digital plus analog display: a live analog clock face drawn on a Canvas
   using trigonometry for the hour, minute, and second hands, alongside
   the standard digital readout and full date.
-- World clock panel: five configurable timezones shown as fixed UTC
-  offsets, updating live alongside the local clock.
+- World clock panel: six configurable timezones shown as fixed UTC
+  offsets, updating live alongside the local clock. Offsets may be
+  fractional, so half hour zones such as Kolkata work too.
 - Theme switcher: three built-in themes swappable instantly via a click,
   no restart required.
 - Stopwatch: start, stop, lap, and reset, with a scrolling lap history.
+  Each lap shows its split time since the previous lap.
 - Alarms: set multiple labeled alarms; a popup and audible beep fire
-  when one is triggered.
+  when one is triggered. Double-click an alarm to enable or disable it.
+- Pomodoro mode: 25 minute focus sessions with 5 minute breaks, with a
+  count of completed focus sessions.
 - Persistent settings: last-used theme, window position, and active mode
   are saved to ``settings.json`` and restored on the next launch.
 
@@ -35,8 +39,9 @@ Run it with::
     python Digital_Clock.py
 
 The pure helper functions at the top of this file (time formatting,
-world clock offsets, stopwatch formatting, alarm parsing, hand geometry,
-and settings load/save) are deliberately independent of Tkinter so they
+world clock offsets, stopwatch formatting and lap splits, alarm parsing
+and toggling, hand geometry, Pomodoro countdown and phases, and settings
+load/save) are deliberately independent of Tkinter so they
 can be unit tested without a display. See ``tests/test_clock.py``.
 """
 
