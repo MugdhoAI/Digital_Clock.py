@@ -65,14 +65,16 @@ except ImportError:  # winsound only exists on Windows
 # Configuration
 # ---------------------------------------------------------------------------
 
-#: City name to fixed offset from UTC, in hours. Edit these values to add
-#: a city or to correct an offset after a daylight saving time change.
+#: City name to fixed offset from UTC, in hours. Offsets may be fractional:
+#: India, for example, is UTC+05:30. Edit these values to add a city or to
+#: correct an offset after a daylight saving time change.
 WORLD_CLOCK_OFFSETS = {
     "Dhaka": 6,
     "Seoul": 9,
     "Riyadh": 3,
     "Berlin": 1,
     "Dublin": 0,
+    "Kolkata": 5.5,
 }
 
 #: Built-in themes. Each theme maps a role name to a hex colour.
@@ -167,7 +169,10 @@ def format_stopwatch(elapsed_seconds):
 
 
 def world_clock_time(now, offset_hours):
-    """Return ``now`` shifted by a fixed UTC offset, in hours."""
+    """Return ``now`` shifted by a fixed UTC offset, in hours.
+
+    The offset may be fractional, for half hour zones such as Kolkata.
+    """
     return now + timedelta(hours=offset_hours)
 
 
