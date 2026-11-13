@@ -318,7 +318,7 @@ def load_settings(path):
             settings[key] = stored[key]
     if settings["theme"] not in THEMES:
         settings["theme"] = DEFAULT_SETTINGS["theme"]
-    if settings["mode"] not in ("Clock", "Stopwatch", "Alarms"):
+    if settings["mode"] not in ("Clock", "Stopwatch", "Alarms", "Pomodoro"):
         settings["mode"] = DEFAULT_SETTINGS["mode"]
     if (not isinstance(settings["geometry"], str)
             or not GEOMETRY_PATTERN.match(settings["geometry"])):
@@ -367,6 +367,11 @@ if tk is not None:
             self._sw_start = 0.0
             self._sw_elapsed = 0.0
             self._sw_lap_times = []
+            self._pomo_phase = "Focus"
+            self._pomo_remaining = float(POMODORO_FOCUS_SECONDS)
+            self._pomo_running = False
+            self._pomo_end = 0.0
+            self._pomo_completed = 0
             self._drag_offset = (0, 0)
             self._palette = palette_for_hour(datetime.now().hour)
 
@@ -380,6 +385,7 @@ if tk is not None:
             self._build_clock_tab()
             self._build_stopwatch_tab()
             self._build_alarms_tab()
+            self._build_pomodoro_tab()
             self.show_mode(self.mode)
 
             self.apply_theme()
@@ -425,7 +431,7 @@ if tk is not None:
             self.tab_bar.pack(fill="x")
             self.tab_bar.pack_propagate(False)
             self.tab_buttons = {}
-            for mode in ("Clock", "Stopwatch", "Alarms"):
+            for mode in ("Clock", "Stopwatch", "Alarms", "Pomodoro"):
                 button = tk.Button(
                     self.tab_bar, text=mode, font=("Segoe UI", 11),
                     bd=0, command=lambda m=mode: self.show_mode(m))
@@ -442,7 +448,8 @@ if tk is not None:
             self.settings["mode"] = mode
             for name, frame in (("Clock", self.clock_frame),
                                 ("Stopwatch", self.stopwatch_frame),
-                                ("Alarms", self.alarms_frame)):
+                                ("Alarms", self.alarms_frame),
+                                ("Pomodoro", self.pomodoro_frame)):
                 if name == mode:
                     frame.pack(fill="both", expand=True)
                 else:
@@ -552,6 +559,72 @@ if tk is not None:
             self._sw_lap_times = []
             self.sw_start_button.configure(text="Start")
             self.sw_laps.delete(0, "end")
+
+        # -- pomodoro tab ----------------------------------------------------
+
+        def _build_pomodoro_tab(self):
+            self.pomodoro_frame = tk.Frame(self.root)
+            self.pomo_phase_label = tk.Label(
+                self.pomodoro_frame, font=("Segoe UI", 14))
+            self.pomo_phase_label.pack(pady=(32, 0))
+            self.pomo_label = tk.Label(
+                self.pomodoro_frame, font=("Segoe UI", 44, "bold"))
+            self.pomo_label.pack(pady=(8, 8))
+            self.pomo_button_row = tk.Frame(self.pomodoro_frame)
+            self.pomo_button_row.pack(pady=8)
+            self.pomo_start_button = tk.Button(
+                self.pomo_button_row, text="Start", font=("Segoe UI", 11),
+                bd=0, command=self._pomo_toggle, width=10)
+            self.pomo_start_button.pack(side="left", padx=4)
+            self.pomo_reset_button = tk.Button(
+                self.pomo_button_row, text="Reset", font=("Segoe UI", 11),
+                bd=0, command=self._pomo_reset, width=10)
+            self.pomo_reset_button.pack(side="left", padx=4)
+            self.pomo_done_label = tk.Label(
+                self.pomodoro_frame, font=("Segoe UI", 11))
+            self.pomo_done_label.pack(pady=8)
+            self._refresh_pomodoro_labels()
+
+        def _refresh_pomodoro_labels(self):
+            self.pomo_phase_label.configure(text=self._pomo_phase)
+            self.pomo_done_label.configure(
+                text="Completed focus sessions: %d" % self._pomo_completed)
+
+        def _pomo_current_remaining(self):
+            if self._pomo_running:
+                remaining = self._pomo_end - time.monotonic()
+                if remaining <= 0:
+                    self._pomo_advance()
+                    remaining = self._pomo_end - time.monotonic()
+                return max(0.0, remaining)
+            return self._pomo_remaining
+
+        def _pomo_advance(self):
+            if self._pomo_phase == "Focus":
+                self._pomo_completed += 1
+            self._pomo_phase = pomodoro_next_phase(self._pomo_phase)
+            self._pomo_remaining = float(
+                pomodoro_phase_seconds(self._pomo_phase))
+            self._pomo_end = time.monotonic() + self._pomo_remaining
+            self._refresh_pomodoro_labels()
+
+        def _pomo_toggle(self):
+            if self._pomo_running:
+                self._pomo_remaining = self._pomo_current_remaining()
+                self._pomo_running = False
+                self.pomo_start_button.configure(text="Start")
+            else:
+                self._pomo_end = time.monotonic() + self._pomo_remaining
+                self._pomo_running = True
+                self.pomo_start_button.configure(text="Pause")
+
+        def _pomo_reset(self):
+            self._pomo_running = False
+            self._pomo_phase = "Focus"
+            self._pomo_remaining = float(POMODORO_FOCUS_SECONDS)
+            self._pomo_completed = 0
+            self.pomo_start_button.configure(text="Start")
+            self._refresh_pomodoro_labels()
 
         # -- alarms tab ----------------------------------------------------
 
@@ -703,6 +776,15 @@ if tk is not None:
                                  activeforeground=theme["button_fg"])
             self.alarm_list.configure(bg=bg, fg=theme["fg"],
                                       selectbackground=theme["button"])
+            self.pomodoro_frame.configure(bg=bg)
+            self.pomo_phase_label.configure(bg=bg, fg=theme["muted"])
+            self.pomo_label.configure(bg=bg, fg=theme["fg"])
+            self.pomo_button_row.configure(bg=bg)
+            for button in (self.pomo_start_button, self.pomo_reset_button):
+                button.configure(bg=theme["button"], fg=theme["button_fg"],
+                                 activebackground=theme["button"],
+                                 activeforeground=theme["button_fg"])
+            self.pomo_done_label.configure(bg=bg, fg=theme["muted"])
             self.world_frame.configure(bg=bg)
             for name_label, time_label in self.world_labels.values():
                 name_label.master.configure(bg=bg)
@@ -718,6 +800,8 @@ if tk is not None:
             self._draw_analog(now)
             self.sw_label.configure(
                 text=format_stopwatch(self._sw_current_elapsed()))
+            self.pomo_label.configure(
+                text=format_countdown(self._pomo_current_remaining()))
             for city, offset in WORLD_CLOCK_OFFSETS.items():
                 city_time = world_clock_time(now, offset)
                 label = self.world_labels[city][1]
