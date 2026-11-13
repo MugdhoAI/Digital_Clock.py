@@ -168,6 +168,41 @@ def format_stopwatch(elapsed_seconds):
     return "%02d:%02d.%02d" % (minutes, seconds, centiseconds)
 
 
+def format_countdown(remaining_seconds):
+    """Format a countdown as ``MM:SS`` or ``HH:MM:SS`` once it reaches an hour.
+
+    A negative value is clamped to zero: a countdown never shows a
+    negative time.
+    """
+    if remaining_seconds < 0:
+        remaining_seconds = 0
+    total_seconds = int(remaining_seconds)
+    hours, remainder = divmod(total_seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    if hours:
+        return "%02d:%02d:%02d" % (hours, minutes, seconds)
+    return "%02d:%02d" % (minutes, seconds)
+
+
+#: Pomodoro phase lengths, in seconds: 25 minutes of focus, 5 of break.
+POMODORO_FOCUS_SECONDS = 25 * 60
+POMODORO_BREAK_SECONDS = 5 * 60
+
+
+def pomodoro_next_phase(phase):
+    """Return the phase that follows ``phase``: Focus then Break, then Focus."""
+    if phase == "Focus":
+        return "Break"
+    return "Focus"
+
+
+def pomodoro_phase_seconds(phase):
+    """Return the length of a Pomodoro ``phase`` in seconds."""
+    if phase == "Break":
+        return POMODORO_BREAK_SECONDS
+    return POMODORO_FOCUS_SECONDS
+
+
 def lap_split_seconds(lap_times, index):
     """Return the split for lap ``index``: the time since the previous lap.
 
