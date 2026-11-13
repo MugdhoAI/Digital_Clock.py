@@ -43,6 +43,7 @@ can be unit tested without a display. See ``tests/test_clock.py``.
 import json
 import math
 import os
+import re
 import sys
 import time
 from datetime import datetime, timedelta
@@ -121,6 +122,11 @@ DEFAULT_SETTINGS = {
 }
 
 SETTINGS_FILENAME = "settings.json"
+
+#: A saved window geometry must look like ``WIDTHxHEIGHT+X+Y``. Anything
+#: else is treated as corrupt and replaced with the default, instead of
+#: crashing the app inside ``root.geometry()`` on the next launch.
+GEOMETRY_PATTERN = re.compile(r"^\d+x\d+[+-]\d+[+-]\d+$")
 
 
 def settings_path():
@@ -261,6 +267,9 @@ def load_settings(path):
         settings["theme"] = DEFAULT_SETTINGS["theme"]
     if settings["mode"] not in ("Clock", "Stopwatch", "Alarms"):
         settings["mode"] = DEFAULT_SETTINGS["mode"]
+    if (not isinstance(settings["geometry"], str)
+            or not GEOMETRY_PATTERN.match(settings["geometry"])):
+        settings["geometry"] = DEFAULT_SETTINGS["geometry"]
     return settings
 
 
