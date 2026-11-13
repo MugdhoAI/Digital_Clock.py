@@ -168,6 +168,19 @@ def format_stopwatch(elapsed_seconds):
     return "%02d:%02d.%02d" % (minutes, seconds, centiseconds)
 
 
+def lap_split_seconds(lap_times, index):
+    """Return the split for lap ``index``: the time since the previous lap.
+
+    The first lap has no previous lap, so its split is the lap time itself.
+    Raises ``IndexError`` for an index outside the list.
+    """
+    if index < 0 or index >= len(lap_times):
+        raise IndexError("lap index out of range")
+    if index == 0:
+        return lap_times[0]
+    return lap_times[index] - lap_times[index - 1]
+
+
 def world_clock_time(now, offset_hours):
     """Return ``now`` shifted by a fixed UTC offset, in hours.
 
@@ -490,9 +503,12 @@ if tk is not None:
                 return
             lap_time = self._sw_current_elapsed()
             self._sw_lap_times.append(lap_time)
+            split = lap_split_seconds(self._sw_lap_times,
+                                      len(self._sw_lap_times) - 1)
             self.sw_laps.insert(
-                "end", "Lap %d  %s" % (len(self._sw_lap_times),
-                                       format_stopwatch(lap_time)))
+                "end", "Lap %d  %s  (+%s)" % (len(self._sw_lap_times),
+                                              format_stopwatch(lap_time),
+                                              format_stopwatch(split)))
             self.sw_laps.see("end")
 
         def _sw_reset(self):
