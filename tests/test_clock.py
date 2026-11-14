@@ -331,6 +331,21 @@ class TestSettings(unittest.TestCase):
                              clock.DEFAULT_SETTINGS["geometry"])
             self.assertEqual(settings["theme"], "Cyberpunk")
 
+    def test_non_string_theme_falls_back(self):
+        # A theme stored as a list or object used to crash load_settings
+        # with TypeError (unhashable type) when it was checked against
+        # the THEMES dict, instead of falling back to the default.
+        for bad_theme in (["Cyberpunk"], {"name": "Cyberpunk"}, 123):
+            with tempfile.TemporaryDirectory() as directory:
+                path = os.path.join(directory, "settings.json")
+                stored = {"theme": bad_theme,
+                          "geometry": "400x500+10+20",
+                          "mode": "Clock"}
+                with open(path, "w", encoding="utf-8") as handle:
+                    json.dump(stored, handle)
+                settings = clock.load_settings(path)
+                self.assertEqual(settings["theme"], "Cyberpunk")
+
     def test_non_string_geometry_falls_back(self):
         with tempfile.TemporaryDirectory() as directory:
             path = os.path.join(directory, "settings.json")
