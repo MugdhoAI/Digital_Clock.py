@@ -334,7 +334,8 @@ def load_settings(path):
     for key in DEFAULT_SETTINGS:
         if key in stored:
             settings[key] = stored[key]
-    if settings["theme"] not in THEMES:
+    if (not isinstance(settings["theme"], str)
+            or settings["theme"] not in THEMES):
         settings["theme"] = DEFAULT_SETTINGS["theme"]
     if settings["mode"] not in ("Clock", "Stopwatch", "Alarms", "Pomodoro"):
         settings["mode"] = DEFAULT_SETTINGS["mode"]
