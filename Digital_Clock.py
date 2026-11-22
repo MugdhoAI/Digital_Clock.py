@@ -14,9 +14,10 @@ Features:
 - Digital plus analog display: a live analog clock face drawn on a Canvas
   using trigonometry for the hour, minute, and second hands, alongside
   the standard digital readout and full date.
-- World clock panel: six configurable timezones shown as fixed UTC
-  offsets, updating live alongside the local clock. Offsets may be
-  fractional, so half hour zones such as Kolkata work too.
+- World clock panel: six configurable timezones shown with real IANA
+  zone names via ``zoneinfo``, updating live alongside the local clock.
+  Half hour zones such as Kolkata work too, and daylight saving time
+  is followed automatically.
 - Theme switcher: three built-in themes swappable instantly via a click,
   no restart required.
 - Stopwatch: start, stop, lap, and reset, with a scrolling lap history.
@@ -28,18 +29,19 @@ Features:
 - Persistent settings: last-used theme, window position, and active mode
   are saved to ``settings.json`` and restored on the next launch.
 
-Only the Python standard library is used. World clock times use fixed UTC
-offsets rather than a timezone database, so no ``tzdata`` install is
-needed. The trade-off: offsets are hardcoded to each city's current
-standard, so they will be off by an hour during daylight saving time
-transitions until manually updated in ``WORLD_CLOCK_OFFSETS``.
+Only the Python standard library is used. World clock times use
+``zoneinfo`` with IANA zone names, so each city follows its real local
+time, including daylight saving time: Berlin and Dublin are no longer
+off by an hour in summer. ``zoneinfo`` reads the system timezone
+database; on platforms without one, such as Windows, install the
+``tzdata`` package.
 
 Run it with::
 
     python Digital_Clock.py
 
 The pure helper functions at the top of this file (time formatting,
-world clock offsets, stopwatch formatting and lap splits, alarm parsing
+world clock zones, stopwatch formatting and lap splits, alarm parsing
 and toggling, hand geometry, Pomodoro countdown and phases, and settings
 load/save) are deliberately independent of Tkinter so they
 can be unit tested without a display. See ``tests/test_clock.py``.
@@ -51,7 +53,8 @@ import os
 import re
 import sys
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 try:
     import tkinter as tk
@@ -70,16 +73,17 @@ except ImportError:  # winsound only exists on Windows
 # Configuration
 # ---------------------------------------------------------------------------
 
-#: City name to fixed offset from UTC, in hours. Offsets may be fractional:
-#: India, for example, is UTC+05:30. Edit these values to add a city or to
-#: correct an offset after a daylight saving time change.
-WORLD_CLOCK_OFFSETS = {
-    "Dhaka": 6,
-    "Seoul": 9,
-    "Riyadh": 3,
-    "Berlin": 1,
-    "Dublin": 0,
-    "Kolkata": 5.5,
+#: City name to IANA timezone name. Using real zone names instead of
+#: fixed UTC offsets means daylight saving time is handled correctly:
+#: Berlin moves between UTC+01:00 and UTC+02:00 on its own, and Dublin
+#: between UTC+00:00 and UTC+01:00. Edit these values to add a city.
+WORLD_CLOCK_ZONES = {
+    "Dhaka": "Asia/Dhaka",
+    "Seoul": "Asia/Seoul",
+    "Riyadh": "Asia/Riyadh",
+    "Berlin": "Europe/Berlin",
+    "Dublin": "Europe/Dublin",
+    "Kolkata": "Asia/Kolkata",
 }
 
 #: Built-in themes. Each theme maps a role name to a hex colour.
@@ -221,12 +225,17 @@ def lap_split_seconds(lap_times, index):
     return lap_times[index] - lap_times[index - 1]
 
 
-def world_clock_time(now, offset_hours):
-    """Return ``now`` shifted by a fixed UTC offset, in hours.
+def world_clock_time(now, zone_name):
+    """Return the moment ``now`` expressed in the IANA zone ``zone_name``.
 
-    The offset may be fractional, for half hour zones such as Kolkata.
+    A naive ``now`` is read as UTC. The result is timezone aware, and
+    its UTC offset follows the zone's real rules, including daylight
+    saving time, so Berlin is UTC+02:00 in summer and UTC+01:00 in
+    winter rather than one fixed offset all year.
     """
-    return now + timedelta(hours=offset_hours)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+    return now.astimezone(ZoneInfo(zone_name))
 
 
 def parse_alarm_time(text):
@@ -506,7 +515,7 @@ if tk is not None:
             self.world_frame = tk.Frame(self.clock_frame)
             self.world_frame.pack(pady=(4, 12))
             self.world_labels = {}
-            for city in WORLD_CLOCK_OFFSETS:
+            for city in WORLD_CLOCK_ZONES:
                 row = tk.Frame(self.world_frame)
                 row.pack(fill="x", padx=20)
                 name_label = tk.Label(row, text=city,
@@ -834,8 +843,9 @@ if tk is not None:
                 text=format_stopwatch(self._sw_current_elapsed()))
             self.pomo_label.configure(
                 text=format_countdown(self._pomo_current_remaining()))
-            for city, offset in WORLD_CLOCK_OFFSETS.items():
-                city_time = world_clock_time(now, offset)
+            utc_now = datetime.now(timezone.utc)
+            for city, zone_name in WORLD_CLOCK_ZONES.items():
+                city_time = world_clock_time(utc_now, zone_name)
                 label = self.world_labels[city][1]
                 label.configure(text=format_time(city_time))
             self._check_alarms(now)
