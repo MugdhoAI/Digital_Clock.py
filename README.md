@@ -17,9 +17,10 @@ app with real UI/UX and software design decisions behind it.
   `Canvas` using trigonometry for the hour/minute/second hands, alongside the
   standard digital readout and full date.
 - **World clock panel**: six configurable timezones (Dhaka, Seoul, Riyadh,
-  Berlin, Dublin, Kolkata by default) shown as fixed UTC offsets, updating
-  live alongside the local clock. Offsets may be fractional, so half hour
-  zones such as Kolkata (UTC+05:30) work too.
+  Berlin, Dublin, Kolkata by default) shown with real IANA zone names via
+  `zoneinfo`, updating live alongside the local clock. Half hour zones
+  such as Kolkata (UTC+05:30) work too, and daylight saving time is
+  followed automatically, so Berlin and Dublin stay correct in summer.
 - **Theme switcher** — three built-in themes (Cyberpunk, Minimal Light, Old
   Money) swappable instantly via a click, no restart required.
 - **Stopwatch**: start/stop/lap/reset, with a scrolling lap history. Each
@@ -51,18 +52,17 @@ This was deliberately built with a class based architecture
 
 ## Requirements
 
-- Python 3.8 or later
+- Python 3.9 or later (for the standard library `zoneinfo` module)
 - Tkinter (bundled with most Python installations; on Ubuntu/Debian, install
   via `sudo apt install python3-tk` if it's missing)
 - `winsound` is used for the alarm beep on Windows automatically; on macOS/
   Linux the app falls back to a terminal bell instead of crashing.
 
-No third party packages are required — everything here uses the Python
-standard library. World clock times use fixed UTC offsets rather than a
-timezone database, so no `tzdata` install is needed. The trade-off: offsets
-are hardcoded to each city's current standard, so they will be off by an
-hour during daylight saving time transitions until manually updated in
-`WORLD_CLOCK_OFFSETS` at the top of the file.
+No third party packages are required, everything here uses the Python
+standard library. World clock times use `zoneinfo` with IANA zone names,
+so each city follows its real local time, including daylight saving time.
+`zoneinfo` reads the system timezone database; on platforms without one,
+such as Windows, install the `tzdata` package so the zone names resolve.
 
 ## Running it
 
@@ -79,7 +79,8 @@ listed in `.gitignore` so it won't be committed to the repository.
 
 The pure logic lives in functions that do not touch Tkinter, so it is
 covered by unit tests that need no display: time formatting, world clock
-offsets, stopwatch formatting and lap splits, alarm parsing and toggling,
+zones (including Berlin and Dublin in both daylight saving and standard
+time), stopwatch formatting and lap splits, alarm parsing and toggling,
 analog hand geometry, Pomodoro countdown and phases, themes, and settings
 load/save.
 
@@ -97,11 +98,10 @@ python -m unittest discover -s tests -v
 
 ## Possible future additions
 
-- Automatic daylight saving time adjustment for world clock offsets
 - Weather integration via a free API alongside the time
 - Offline text-to-speech time announcements
 - Custom user-added timezones via the UI (currently edited via the
-  `WORLD_CLOCK_OFFSETS` dictionary in the source file)
+  `WORLD_CLOCK_ZONES` dictionary in the source file)
 
 ## License
 

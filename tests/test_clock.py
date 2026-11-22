@@ -11,7 +11,7 @@ import os
 import sys
 import tempfile
 import unittest
-from datetime import datetime
+from datetime import datetime, timedelta
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -86,26 +86,68 @@ class TestPomodoro(unittest.TestCase):
 class TestWorldClock(unittest.TestCase):
     def test_positive_offset(self):
         now = datetime(2026, 11, 9, 12, 0, 0)
-        self.assertEqual(clock.world_clock_time(now, 6),
+        result = clock.world_clock_time(now, "Asia/Dhaka")
+        self.assertEqual(result.replace(tzinfo=None),
                          datetime(2026, 11, 9, 18, 0, 0))
+        self.assertEqual(result.utcoffset(), timedelta(hours=6))
 
     def test_negative_offset_crosses_midnight(self):
         now = datetime(2026, 11, 9, 2, 0, 0)
-        self.assertEqual(clock.world_clock_time(now, -5),
+        result = clock.world_clock_time(now, "America/New_York")
+        self.assertEqual(result.replace(tzinfo=None),
                          datetime(2026, 11, 8, 21, 0, 0))
+        self.assertEqual(result.utcoffset(), timedelta(hours=-5))
 
     def test_fractional_offset(self):
         now = datetime(2026, 11, 9, 12, 0, 0)
-        self.assertEqual(clock.world_clock_time(now, 5.5),
+        result = clock.world_clock_time(now, "Asia/Kolkata")
+        self.assertEqual(result.replace(tzinfo=None),
                          datetime(2026, 11, 9, 17, 30, 0))
+        self.assertEqual(result.utcoffset(),
+                         timedelta(hours=5, minutes=30))
 
     def test_configured_cities(self):
-        self.assertEqual(clock.WORLD_CLOCK_OFFSETS["Dhaka"], 6)
-        self.assertEqual(clock.WORLD_CLOCK_OFFSETS["Seoul"], 9)
-        self.assertEqual(clock.WORLD_CLOCK_OFFSETS["Riyadh"], 3)
-        self.assertEqual(clock.WORLD_CLOCK_OFFSETS["Berlin"], 1)
-        self.assertEqual(clock.WORLD_CLOCK_OFFSETS["Dublin"], 0)
-        self.assertEqual(clock.WORLD_CLOCK_OFFSETS["Kolkata"], 5.5)
+        self.assertEqual(clock.WORLD_CLOCK_ZONES["Dhaka"], "Asia/Dhaka")
+        self.assertEqual(clock.WORLD_CLOCK_ZONES["Seoul"], "Asia/Seoul")
+        self.assertEqual(clock.WORLD_CLOCK_ZONES["Riyadh"], "Asia/Riyadh")
+        self.assertEqual(clock.WORLD_CLOCK_ZONES["Berlin"], "Europe/Berlin")
+        self.assertEqual(clock.WORLD_CLOCK_ZONES["Dublin"], "Europe/Dublin")
+        self.assertEqual(clock.WORLD_CLOCK_ZONES["Kolkata"], "Asia/Kolkata")
+
+    def test_berlin_daylight_saving_time(self):
+        # 1 July is in CEST: Berlin is UTC+02:00, not the fixed UTC+01:00
+        # the old offset table used all year.
+        summer = clock.world_clock_time(datetime(2026, 7, 1, 12, 0, 0),
+                                        "Europe/Berlin")
+        self.assertEqual(summer.replace(tzinfo=None),
+                         datetime(2026, 7, 1, 14, 0, 0))
+        self.assertEqual(summer.utcoffset(), timedelta(hours=2))
+        self.assertEqual(summer.tzname(), "CEST")
+
+    def test_berlin_standard_time(self):
+        # 15 January is in CET: Berlin is back to UTC+01:00.
+        winter = clock.world_clock_time(datetime(2026, 1, 15, 12, 0, 0),
+                                        "Europe/Berlin")
+        self.assertEqual(winter.replace(tzinfo=None),
+                         datetime(2026, 1, 15, 13, 0, 0))
+        self.assertEqual(winter.utcoffset(), timedelta(hours=1))
+        self.assertEqual(winter.tzname(), "CET")
+
+    def test_dublin_daylight_saving_time(self):
+        # Dublin is UTC+01:00 (IST) in summer and UTC+00:00 (GMT) in
+        # winter, so a fixed offset of 0 was an hour behind in summer.
+        summer = clock.world_clock_time(datetime(2026, 7, 1, 12, 0, 0),
+                                        "Europe/Dublin")
+        self.assertEqual(summer.replace(tzinfo=None),
+                         datetime(2026, 7, 1, 13, 0, 0))
+        self.assertEqual(summer.utcoffset(), timedelta(hours=1))
+
+    def test_dublin_standard_time(self):
+        winter = clock.world_clock_time(datetime(2026, 1, 15, 12, 0, 0),
+                                        "Europe/Dublin")
+        self.assertEqual(winter.replace(tzinfo=None),
+                         datetime(2026, 1, 15, 12, 0, 0))
+        self.assertEqual(winter.utcoffset(), timedelta(hours=0))
 
 
 class TestAlarms(unittest.TestCase):
